@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>BCS 5th Grade Chat Hub</title>
+    <style>
+        :root{
+            --page-bg: #800080; /* purple */
+            --card-bg: #ffffff;
+            --text: #222222;
+            --muted: #666666;
+            --accent: #6a0dad; /* darker purple */
+            --link: #0b5fff;
+            --chat-bg: #f9f9f9;
+            --message-bg: #ffffff;
+        }
+
+        html,body{
+            height:100%;
+            margin:0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: linear-gradient(180deg,var(--page-bg) 0%, #5a005a 100%);
+            color:var(--text);
+            -webkit-font-smoothing:antialiased;
+            -moz-osx-font-smoothing:grayscale;
+        }
+
+        .container {
+            max-width: 760px;
+            margin: 40px auto;
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+        }
+
+        h1{
+            margin:0 0 12px 0;
+            color:var(--accent);
+            font-size:1.6rem;
+        }
+
+        .row {
+            display:flex;
+            gap:8px;
+            flex-wrap:wrap;
+            align-items:center;
+            margin-bottom:10px;
+        }
+
+        input[type="text"],
+        input[type="url"],
+        input[type="file"] {
+            padding:8px 10px;
+            border:1px solid #d0d0d0;
+            border-radius:6px;
+            font-size:0.95rem;
+            flex:1 1 auto;
+        }
+
+        button {
+            padding:8px 12px;
+            border-radius:6px;
+            border:none;
+            background:var(--accent);
+            color:white;
+            cursor:pointer;
+            font-weight:600;
+        }
+
+        button[disabled] {
+            opacity:0.55;
+            cursor:not-allowed;
+        }
+
+        #chat-box {
+            border:1px solid #e0e0e0;
+            height:320px;
+            overflow-y:auto;
+            background:var(--chat-bg);
+            padding:12px;
+            margin-top:6px;
+            border-radius:6px;
+        }
+
+        .message {
+            background:var(--message-bg);
+            padding:8px 10px;
+            border-radius:6px;
+            margin-bottom:8px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+            font-size:0.95rem;
+        }
+
+        .meta {
+            display:block;
+            font-size:0.8rem;
+            color:var(--muted);
+            margin-bottom:6px;
+        }
+
+        a {
+            color:var(--link);
+            word-break:break-all;
+        }
+
+        .status {
+            font-size:0.9rem;
+            color:var(--muted);
+        }
+
+        @media (max-width:560px){
+            .row { flex-direction:column; align-items:stretch; }
+            button { width:100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" role="main" aria-labelledby="title">
+        <h1 id="title">BCS 5th Grade Chat Hub</h1>
+
+        <div class="row" aria-live="polite">
+            <input id="username" type="text" placeholder="Enter your name" aria-label="Enter your name" />
+            <button id="setNameBtn">Set Name</button>
+            <span class="status" id="status">&nbsp;</span>
+        </div>
+
+        <div id="chat-box" aria-label="Chat messages" role="log"></div>
+
+        <div class="row">
+            <input id="message" type="text" placeholder="Type a message" aria-label="Type a message" />
+            <button id="sendBtn">Send</button>
+        </div>
+
+        <div class="row">
+            <input id="fileUpload" type="file" aria-label="Upload a file" />
+            <button id="uploadBtn">Upload File</button>
+        </div>
+
+        <div class="row">
+            <input id="link" type="url" placeholder="Paste a link" aria-label="Paste a link" />
+            <button id="shareBtn">Share Link</button>
+        </div>
+    </div>
+
+    <script>
+        // Simple safe-text helper to avoid naive HTML injection in messages
+        function escapeHtml(str){
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // Small URL validator (allows http/https)
+        function isValidUrl(value){
+            try {
+                const u = new URL(value);
+                return u.protocol === 'http:' || u.protocol === 'https:';
+            } catch(e) {
+                return false;
+            }
+        }
+
+        const usernameInput = document.getElementById('username');
+        const setNameBtn = document.getElementById('setNameBtn');
+        const statusEl = document.getElementById('status');
+        const chatBox = document.getElementById('chat-box');
+        const messageInput = document.getElementById('message');
+        const sendBtn = document.getElementById('sendBtn');
+        const fileInput = document.getElementById('fileUpload');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const linkInput = document.getElementById('link');
+        const shareBtn = document.getElementById('shareBtn');
+
+        let username = localStorage.getItem('bcs_username') || '';
+
+        function updateUI() {
+            if (username) {
+                statusEl.textContent = 'Signed in as ' + username;
+                usernameInput.value = username;
+                setNameBtn.textContent = 'Change Name';
+                sendBtn.disabled = false;
+                uploadBtn.disabled = false;
+                shareBtn.disabled = false;
+            } else {
+                statusEl.textContent = 'Not signed in';
+                setNameBtn.textContent = 'Set Name';
+                sendBtn.disabled = true;
+                uploadBtn.disabled = true;
+                shareBtn.disabled = true;
+            }
+        }
+
+        function addMessage(contentHtml, author) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'message';
+            const meta = document.createElement('span');
+            meta.className = 'meta';
+            const now = new Date();
+            meta.textContent = (author ? author : 'System') + ' • ' + now.toLocaleTimeString();
+            wrapper.appendChild(meta);
+            const body = document.createElement('div');
+            body.innerHTML = contentHtml;
+            wrapper.appendChild(body);
+            chatBox.appendChild(wrapper);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        setNameBtn.addEventListener('click', () => {
+            const val = usernameInput.value.trim();
+            if (!val) {
+                alert('Please enter a name before setting it.');
+                return;
+            }
+            username = val;
+            localStorage.setItem('bcs_username', username);
+            addMessage(escapeHtml(username) + ' joined the chat.', 'System');
+            updateUI();
+        });
+
+        sendBtn.addEventListener('click', () => {
+            const text = messageInput.value.trim();
+            if (!username) {
+                alert('Please set your name before sending messages.');
+                return;
+            }
+            if (!text) return;
+            addMessage('<strong>' + escapeHtml(username) + ':</strong> ' + escapeHtml(text));
+            messageInput.value = '';
+        });
+
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendBtn.click();
+        });
+
+        uploadBtn.addEventListener('click', () => {
+            if (!username) {
+                alert('Please set your name before uploading files.');
+                return;
+            }
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert('Please pick a file to upload first.');
+                return;
+            }
+            const file = fileInput.files[0];
+            // For local demo: do not upload to server. Show file name and (if small image) a preview.
+            const fileName = escapeHtml(file.name);
+            let content = escapeHtml(username) + ' uploaded: ' + fileName;
+            if (file.type.startsWith('image/')) {
+                const url = URL.createObjectURL(file);
+                content += '<br/><img src="' + url + '" alt="' + fileName + '" style="max-width:240px;border-radius:6px;margin-top:6px;"/>';
+                // Note: we don't revoke the object URL here; in a long-running app you'd revoke after image loads.
+            }
+            addMessage(content);
+            fileInput.value = '';
+        });
+
+        shareBtn.addEventListener('click', () => {
+            const url = linkInput.value.trim();
+            if (!username) {
+                alert('Please set your name before sharing links.');
+                return;
+            }
+            if (!url) return;
+            if (!isValidUrl(url)) {
+                alert('Please enter a valid http(s) URL.');
+                return;
+            }
+            // safe link display
+            const safe = '<strong>' + escapeHtml(username) + ' shared a link:</strong> ' +
+                         '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(url) + '</a>';
+            addMessage(safe);
+            linkInput.value = '';
+        });
+
+        // Initialize UI
+        updateUI();
+
+        // If username was already present, display a welcome note
+        if (username) {
+            addMessage(escapeHtml(username) + ' is here. Welcome back!', 'System');
+        } else {
+            addMessage('Welcome! Set your name to start chatting.', 'System');
+        }
+    </script>
+</body>
+</html>
